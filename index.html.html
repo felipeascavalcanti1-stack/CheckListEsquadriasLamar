@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cronograma de Esquadrias · ALPAC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Firebase (Firestore) — backend real de sincronização, funciona hospedado em qualquer lugar -->
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --paper:#EEEAE0;
+    --paper-line:#D8D2C2;
+    --ink:#1B2430;
+    --ink-soft:#4B5563;
+    --blue:#1F3D5C;
+    --blue-deep:#152A40;
+    --amber:#C8792E;
+    --amber-soft:#E7B978;
+    --green:#3F6E52;
+    --green-soft:#DCE9DE;
+    --red:#9A3B34;
+    --radius:3px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    background-image:
+      linear-gradient(var(--paper-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--paper-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color:var(--ink);
+    font-family:'IBM Plex Sans', sans-serif;
+    min-height:100vh;
+    padding-bottom:60px;
+  }
+  a{color:inherit;}
+
+  /* ---------- HEADER ---------- */
+  header{
+    background:var(--blue-deep);
+    color:var(--paper);
+    padding:28px 24px 22px;
+    border-bottom:4px solid var(--amber);
+    position:relative;
+  }
+  .hgrid{
+    max-width:1100px;
+    margin:0 auto;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:18px;
+  }
+  .htitle{max-width:640px;}
+  .htitle .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    letter-spacing:0.02em;
+    color:var(--amber-soft);
+    margin:0 0 8px;
+  }
+  .htitle h1{
+    font-size:28px;
+    line-height:1.2;
+    margin:0;
+    font-weight:600;
+    letter-spacing:-0.01em;
+  }
+  .htitle p{
+    margin:10px 0 0;
+    color:#C7D0DA;
+    font-size:14.5px;
+    line-height:1.5;
+    max-width:560px;
+  }
+  .hstats{
+    display:flex;
+    gap:0;
+    border:1px solid rgba(255,255,255,0.18);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .hstat{
+    padding:10px 18px;
+    border-left:1px solid rgba(255,255,255,0.18);
+    text-align:center;
+    min-width:88px;
+  }
+  .hstat:first-child{border-left:none;}
+  .hstat .num{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:22px;
+    font-weight:600;
+    color:var(--amber-soft);
+  }
+  .hstat .lbl{
+    font-size:10.5px;
+    color:#AAB6C2;
+    margin-top:2px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+  }
+
+  /* ---------- FLOOR NAV ---------- */
+  .floor-nav-wrap{
+    background:var(--blue);
+    border-bottom:1px solid rgba(255,255,255,0.12);
+    position:sticky;
+    top:0;
+    z-index:20;
+    box-shadow:0 2px 10px rgba(0,0,0,0.15);
+  }
+  .floor-nav{
+    max-width:1100px;
+    margin:0 auto;
+    display:flex;
+    overflow-x:auto;
+    scrollbar-width:thin;
+  }
+  .floor-btn{
+    flex:0 0 auto;
+    background:none;
+    border:none;
+    border-right:1px solid rgba(255,255,255,0.10);
+    color:#B9C6D3;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13.5px;
+    padding:13px 16px;
+    cursor:pointer;
+    white-space:nowrap;
+    position:relative;
+    transition:background 0.15s ease, color 0.15s ease;
+  }
+  .floor-btn:hover{background:rgba(255,255,255,0.06); color:#fff;}
+  .floor-btn.active{
+    color:#fff;
+    background:var(--blue-deep);
+  }
+  .floor-btn.active::after{
+    content:'';
+    position:absolute;
+    left:0; right:0; bottom:0;
+    height:3px;
+    background:var(--amber);
+  }
+  .floor-btn .pct{
+    display:block;
+    font-size:10px;
+    color:var(--amber-soft);
+    margin-top:2px;
+  }
+  .floor-btn.done .pct{color:var(--green-soft);}
+
+  /* ---------- MAIN ---------- */
+  main{max-width:1100px; margin:0 auto; padding:26px 24px 0;}
+
+  .floor-heading{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:14px;
+    margin-bottom:18px;
+  }
+  .floor-heading h2{
+    font-size:21px;
+    margin:0;
+    font-weight:600;
+  }
+  .floor-heading .sub{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:var(--ink-soft);
+    margin-top:4px;
+  }
+  .progress-pill{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    background:#fff;
+    border:1px solid var(--paper-line);
+    border-radius:var(--radius);
+    padding:8px 14px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .progress-track{
+    width:120px;
+    height:6px;
+    background:var(--paper-line);
+    border-radius:3px;
+    overflow:hidden;
+  }
+  .progress-fill{
+    height:100%;
+    background:var(--green);
+    transition:width 0.3s ease;
+  }
+
+  /* ---------- CARD LIST ---------- */
+  .item-card{
+    background:#fff;
+    border:1px solid var(--paper-line);
+    border-left:4px solid var(--blue);
+    border-radius:var(--radius);
+    margin-bottom:10px;
+    padding:14px 16px;
+    display:grid;
+    grid-template-columns:auto 1fr auto;
+    gap:16px;
+    align-items:center;
+    transition:border-color 0.2s ease, background 0.2s ease;
+  }
+  .item-card.checked{
+    border-left-color:var(--green);
+    background:var(--green-soft);
+  }
+  .item-card.overdue:not(.checked){
+    border-left-color:var(--red);
+  }
+
+  .chk-box{
+    width:26px;
+    height:26px;
+    border:2px solid var(--blue);
+    border-radius:4px;
+    background:#fff;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
+  }
+  .chk-box svg{display:none; width:15px; height:15px;}
+  .item-card.checked .chk-box{background:var(--green); border-color:var(--green);}
+  .item-card.checked .chk-box svg{display:block;}
+
+  .item-body .row1{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .item-code{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    font-weight:600;
+    background:var(--blue-deep);
+    color:#fff;
+    padding:2px 7px;
+    border-radius:2px;
+    letter-spacing:0.02em;
+  }
+  .item-local{
+    font-size:15px;
+    font-weight:500;
+  }
+  .item-meta{
+    margin-top:5px;
+    font-size:12.5px;
+    color:var(--ink-soft);
+    display:flex;
+    gap:14px;
+    flex-wrap:wrap;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .item-meta .date-flag{color:var(--amber);}
+  .item-meta .date-flag.late{color:var(--red); font-weight:600;}
+
+  .conf-info{
+    text-align:right;
+    min-width:150px;
+  }
+  .conf-info .who{
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--green);
+  }
+  .conf-info .when{
+    font-size:11px;
+    color:var(--ink-soft);
+    font-family:'IBM Plex Mono', monospace;
+    margin-top:2px;
+  }
+  .conf-info .pending{
+    font-size:12px;
+    color:#9AA3AC;
+    font-style:italic;
+  }
+
+  footer{
+    max-width:1100px;
+    margin:34px auto 0;
+    padding:16px 24px 0;
+    border-top:1px solid var(--paper-line);
+    font-size:12px;
+    color:var(--ink-soft);
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+
+  /* ---------- MODAL ---------- */
+  .overlay{
+    position:fixed; inset:0;
+    background:rgba(21,42,64,0.55);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:100;
+    padding:20px;
+  }
+  .overlay.show{display:flex;}
+  .modal{
+    background:#fff;
+    border-radius:var(--radius);
+    padding:24px;
+    width:100%;
+    max-width:360px;
+    border-top:4px solid var(--amber);
+  }
+  .modal h3{margin:0 0 6px; font-size:17px;}
+  .modal p{margin:0 0 16px; font-size:13.5px; color:var(--ink-soft); line-height:1.4;}
+  .modal input{
+    width:100%;
+    padding:10px 12px;
+    border:1px solid var(--paper-line);
+    border-radius:var(--radius);
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size:14.5px;
+    margin-bottom:14px;
+  }
+  .modal input:focus{outline:2px solid var(--blue); outline-offset:1px;}
+  .modal-actions{display:flex; gap:10px; justify-content:flex-end;}
+  .btn{
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size:13.5px;
+    font-weight:500;
+    padding:9px 16px;
+    border-radius:var(--radius);
+    border:1px solid var(--paper-line);
+    background:#fff;
+    cursor:pointer;
+  }
+  .btn-primary{background:var(--blue); border-color:var(--blue); color:#fff;}
+  .btn-danger{background:var(--red); border-color:var(--red); color:#fff;}
+  .btn:disabled{opacity:0.5; cursor:not-allowed;}
+
+  .sync-note{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--ink-soft);
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .sync-dot{
+    width:7px; height:7px; border-radius:50%;
+    background:var(--green);
+  }
+
+  @media (max-width:600px){
+    .item-card{grid-template-columns:auto 1fr; }
+    .conf-info{grid-column:1/-1; text-align:left; margin-top:6px; padding-left:42px;}
+    .htitle h1{font-size:23px;}
+    .hstats{width:100%;}
+    .hstat{flex:1; min-width:0;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hgrid">
+    <div class="htitle">
+      <p class="eyebrow">ALPAC · OBRA · CONTROLE DE RECEBIMENTO</p>
+      <h1>Cronograma de Entrega das Esquadrias</h1>
+      <p>Conferência por pavimento — do 1º ao 13º andar. Marque cada esquadria ao recebê-la; o nome de quem conferiu fica salvo e visível para qualquer pessoa que abrir este link.</p>
+    </div>
+    <div class="hstats">
+      <div class="hstat"><div class="num" id="stat-total">–</div><div class="lbl">Itens</div></div>
+      <div class="hstat"><div class="num" id="stat-done">–</div><div class="lbl">Conferidos</div></div>
+      <div class="hstat"><div class="num" id="stat-pct">–</div><div class="lbl">Concluído</div></div>
+    </div>
+  </div>
+</header>
+
+<div class="floor-nav-wrap">
+  <nav class="floor-nav" id="floorNav"></nav>
+</div>
+
+<main>
+  <div class="floor-heading">
+    <div>
+      <h2 id="floorTitle">Pavimento 1</h2>
+      <div class="sub" id="floorSub">— itens previstos para este andar</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <div class="sync-note"><span class="sync-dot"></span>Sincronizado em tempo real</div>
+      <div class="progress-pill">
+        <span id="floorPct">0%</span>
+        <div class="progress-track"><div class="progress-fill" id="floorFill" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="itemList"></div>
+</main>
+
+<footer>
+  <span>Fonte: CRONOGRAMA DE ENTREGA DAS ESQUADRIAS POR PRIORIDADE — ALPAC</span>
+  <span id="lastSync">—</span>
+</footer>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="modalTitle">Confirmar recebimento</h3>
+    <p id="modalDesc">Informe seu nome para registrar a conferência. Isso ficará salvo e visível a todos.</p>
+    <input type="text" id="nameInput" placeholder="Seu nome" maxlength="60" autocomplete="off">
+    <div class="modal-actions">
+      <button class="btn" id="cancelBtn">Cancelar</button>
+      <button class="btn btn-primary" id="confirmBtn">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- DADOS DO CRONOGRAMA (planilha ALPAC) ----------
+// qtyPerFloor já é a quantidade por pavimento (total da planilha / 13 pavimentos)
+const SCHEDULE = [
+  { code:'E1',      local:'Apartamento 04',                         qty:1, date:'2026-09-08' },
+  { code:'E8',      local:'Living 03',                               qty:1, date:'2026-09-21' },
+  { code:'E3',      local:'Living 02',                               qty:1, date:'2026-09-21' },
+  { code:'E9',      local:'Living 04 (medida do contramarco ajustado)', qty:1, date:'2026-09-29' },
+  { code:'E6',      local:'Basculante — frente da obra',             qty:6, date:'2026-10-02' },
+  { code:'E2',      local:'Living 01 (medida do contramarco ajustado)', qty:1, date:'2026-10-14' },
+  { code:'E4',      local:'—',                                       qty:2, date:'2026-10-22' },
+  { code:'E29',     local:'—',                                       qty:2, date:'2026-10-22' },
+  { code:'E5',      local:'Suíte 01 e 02 — coluna 01 e 04',          qty:4, date:'2026-10-30' },
+  { code:'E1',      local:'Cremalheira',                             qty:1, date:'2026-11-09' },
+  { code:'E5A',     local:'Suíte 02 — coluna 02 e 03',               qty:2, date:'2026-11-17' },
+  { code:'E6',      local:'Basculante — fundo da obra',              qty:6, date:'2026-11-24' },
+  { code:'V1',      local:'—',                                       qty:2, date:'2026-11-24' },
+  { code:'E10',     local:'—',                                       qty:1, date:'2026-11-24' },
+  { code:'E7A',     local:'Área técnica — coluna 02',                qty:1, date:'2026-12-01' },
+  { code:'E7B',     local:'Serviço — coluna 01 e 03',                qty:2, date:'2026-12-01' },
+  { code:'E7',      local:'Suíte 01 — coluna 02 e 03',               qty:2, date:'2026-12-08' },
+  { code:'E30',     local:'—',                                       qty:1, date:'2026-12-08' },
+  { code:'V2',      local:'—',                                       qty:4, date:'2026-12-15' },
+  { code:'SHAFT 01',local:'Confirmar medida e detalhe — pavimento modelo', qty:1, date:'2026-12-15' },
+  { code:'SHAFT 02',local:'Confirmar medida e detalhe — pavimento modelo', qty:1, date:'2026-12-15' },
+  { code:'SHAFT 03',local:'Confirmar medida e detalhe — pavimento modelo', qty:1, date:'2026-12-15' },
+];
+const FLOORS = Array.from({length:13}, (_, i) => i + 1);
+
+let currentFloor = 1;
+let storeCache = {}; // key -> {checked, name, ts}
+let pendingKey = null;
+
+function fmtDate(iso){
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'short', year:'numeric' });
+}
+function fmtWhen(ts){
+  const d = new Date(ts);
+  return d.toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit',year:'2-digit'}) + ' às ' +
+         d.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
+}
+function keyFor(floor, idx){ return `chk:${floor}:${idx}`; }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+
+// ---------- STORAGE (Firebase Firestore) ----------
+// 1) Crie um projeto gratuito em https://console.firebase.google.com
+// 2) Ative o Firestore Database (modo produção) em "Build > Firestore Database"
+// 3) Em "Configurações do projeto > Geral > Seus apps", crie um app da Web e copie o objeto de config abaixo
+// 4) Em "Firestore > Regras", use algo como:
+//      rules_version = '2';
+//      service cloud.firestore {
+//        match /databases/{database}/documents {
+//          match /checks/{docId} {
+//            allow read, write: if true; // ajuste depois para autenticação, se quiser restringir
+//          }
+//        }
+//      }
+const firebaseConfig = {
+  apiKey: "AIzaSyBVB-QufHxk3AekyaYqzksqFyGCo07gsL0",
+  authDomain: "check-list-esquadrias-lamar.firebaseapp.com",
+  projectId: "check-list-esquadrias-lamar",
+  storageBucket: "check-list-esquadrias-lamar.firebasestorage.app",
+  messagingSenderId: "711353866078",
+  appId: "1:711353866078:web:d06af7da4d4a90c883a1cf"
+};
+
+let db = null;
+let firestoreReady = false;
+const COLLECTION = 'checks'; // cada documento: id = "floor_idx", campos {checked, name, ts}
+
+function storageAvailable(){
+  return firestoreReady;
+}
+
+function showStorageWarning(msg){
+  let banner = document.getElementById('storageWarning');
+  if(!banner){
+    banner = document.createElement('div');
+    banner.id = 'storageWarning';
+    banner.style.cssText = 'max-width:1100px;margin:14px auto 0;padding:12px 16px;background:#F7E3D9;border:1px solid var(--red);border-radius:3px;color:var(--red);font-size:13.5px;font-family:IBM Plex Sans, sans-serif;';
+    document.querySelector('main').prepend(banner);
+  }
+  banner.textContent = msg;
+}
+function clearStorageWarning(){
+  const banner = document.getElementById('storageWarning');
+  if(banner) banner.remove();
+}
+
+function initFirebase(){
+  try{
+    if(firebaseConfig.apiKey === 'COLE_AQUI'){
+      showStorageWarning('Backend ainda não configurado: abra o HTML, preencha o objeto firebaseConfig com os dados do seu projeto Firebase e publique novamente.');
+      return;
+    }
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    firestoreReady = true;
+    clearStorageWarning();
+    listenAll();
+  }catch(e){
+    console.error('Falha ao iniciar Firebase', e);
+    showStorageWarning('Não foi possível conectar ao backend agora (' + (e && e.message ? e.message : 'erro de conexão') + ').');
+  }
+}
+
+// Escuta em tempo real: qualquer alteração feita por outra pessoa chega aqui na hora, sem precisar de polling
+function listenAll(){
+  db.collection(COLLECTION).onSnapshot(snapshot => {
+    const map = {};
+    snapshot.forEach(doc => { map[doc.id] = doc.data(); });
+    storeCache = map;
+    render();
+    document.getElementById('lastSync').textContent = 'Última sincronização: ' + new Date().toLocaleTimeString('pt-BR');
+    clearStorageWarning();
+  }, err => {
+    console.error('Falha ao sincronizar', err);
+    showStorageWarning('Conexão com o backend interrompida (' + (err && err.message ? err.message : 'erro de conexão') + '). Tentando reconectar...');
+  });
+}
+
+async function saveCheck(floor, idx, name){
+  if(!storageAvailable()){
+    alert('Não é possível salvar: o backend não está configurado nesta página (veja o aviso no topo).');
+    return false;
+  }
+  const key = keyFor(floor, idx);
+  const value = { checked:true, name:name, ts:Date.now() };
+  try{
+    await db.collection(COLLECTION).doc(key).set(value);
+    storeCache[key] = value;
+    return true;
+  }catch(e){
+    console.error('Falha ao salvar', e);
+    alert('Não foi possível salvar a conferência: ' + (e && e.message ? e.message : 'erro desconhecido') + '. Tente novamente.');
+    return false;
+  }
+}
+
+async function clearCheck(floor, idx){
+  if(!storageAvailable()) return false;
+  const key = keyFor(floor, idx);
+  try{
+    await db.collection(COLLECTION).doc(key).delete();
+    delete storeCache[key];
+    return true;
+  }catch(e){
+    console.error('Falha ao desmarcar', e);
+    alert('Não foi possível desmarcar este item agora. Tente novamente.');
+    return false;
+  }
+}
+
+// ---------- RENDER ----------
+function buildFloorNav(){
+  const nav = document.getElementById('floorNav');
+  nav.innerHTML = '';
+  FLOORS.forEach(f => {
+    const btn = document.createElement('button');
+    btn.className = 'floor-btn' + (f === currentFloor ? ' active' : '');
+    btn.dataset.floor = f;
+    btn.innerHTML = `Pavimento ${f}<span class="pct" data-pctfor="${f}">0%</span>`;
+    btn.addEventListener('click', () => { currentFloor = f; render(); });
+    nav.appendChild(btn);
+  });
+}
+
+function floorStats(floor){
+  let done = 0;
+  SCHEDULE.forEach((_, idx) => {
+    if(storeCache[keyFor(floor, idx)]?.checked) done++;
+  });
+  return { done, total: SCHEDULE.length };
+}
+
+function overallStats(){
+  let done = 0, total = 0;
+  FLOORS.forEach(f => {
+    SCHEDULE.forEach((_, idx) => {
+      total++;
+      if(storeCache[keyFor(f, idx)]?.checked) done++;
+    });
+  });
+  return { done, total };
+}
+
+function renderNavStates(){
+  FLOORS.forEach(f => {
+    const btn = document.querySelector(`.floor-btn[data-floor="${f}"]`);
+    const pctEl = document.querySelector(`[data-pctfor="${f}"]`);
+    const { done, total } = floorStats(f);
+    const pct = total ? Math.round((done/total)*100) : 0;
+    if(pctEl) pctEl.textContent = pct + '%';
+    if(btn){
+      btn.classList.toggle('active', f === currentFloor);
+      btn.classList.toggle('done', pct === 100);
+    }
+  });
+}
+
+function renderHeader(){
+  const { done, total } = overallStats();
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-done').textContent = done;
+  document.getElementById('stat-pct').textContent = total ? Math.round((done/total)*100) + '%' : '0%';
+}
+
+function renderFloorHeading(){
+  document.getElementById('floorTitle').textContent = `Pavimento ${currentFloor}`;
+  document.getElementById('floorSub').textContent = `${SCHEDULE.length} itens previstos para este andar`;
+  const { done, total } = floorStats(currentFloor);
+  const pct = total ? Math.round((done/total)*100) : 0;
+  document.getElementById('floorPct').textContent = pct + '%';
+  document.getElementById('floorFill').style.width = pct + '%';
+}
+
+function renderItems(){
+  const list = document.getElementById('itemList');
+  list.innerHTML = '';
+  const today = todayISO();
+
+  SCHEDULE.forEach((item, idx) => {
+    const key = keyFor(currentFloor, idx);
+    const entry = storeCache[key];
+    const checked = !!(entry && entry.checked);
+    const overdue = !checked && item.date < today;
+
+    const card = document.createElement('div');
+    card.className = 'item-card' + (checked ? ' checked' : '') + (overdue ? ' overdue' : '');
+
+    const chk = document.createElement('button');
+    chk.className = 'chk-box';
+    chk.setAttribute('aria-label', checked ? 'Desmarcar item' : 'Marcar item como recebido');
+    chk.innerHTML = `<svg viewBox="0 0 24 24" fill="none"><path d="M4 12.5L9.5 18L20 6" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    chk.addEventListener('click', () => onToggle(idx, checked));
+
+    const body = document.createElement('div');
+    body.className = 'item-body';
+    const qtyLabel = item.qty > 1 ? `${item.qty} unidades` : '1 unidade';
+    body.innerHTML = `
+      <div class="row1">
+        <span class="item-code">${item.code}</span>
+        <span class="item-local">${item.local}</span>
+      </div>
+      <div class="item-meta">
+        <span class="${overdue ? 'date-flag late' : 'date-flag'}">${overdue ? 'Atrasado desde' : 'Previsto para'} ${fmtDate(item.date)}</span>
+        <span>${qtyLabel}</span>
+      </div>
+    `;
+
+    const conf = document.createElement('div');
+    conf.className = 'conf-info';
+    if(checked){
+      conf.innerHTML = `<div class="who">✓ ${escapeHtml(entry.name)}</div><div class="when">${fmtWhen(entry.ts)}</div>`;
+    } else {
+      conf.innerHTML = `<div class="pending">aguardando conferência</div>`;
+    }
+
+    card.appendChild(chk);
+    card.appendChild(body);
+    card.appendChild(conf);
+    list.appendChild(card);
+  });
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function render(){
+  buildFloorNav();
+  renderNavStates();
+  renderHeader();
+  renderFloorHeading();
+  renderItems();
+}
+
+// ---------- CHECK / UNCHECK FLOW ----------
+function onToggle(idx, currentlyChecked){
+  if(currentlyChecked){
+    const entry = storeCache[keyFor(currentFloor, idx)];
+    const ok = confirm(`Desmarcar a conferência de "${SCHEDULE[idx].code} — ${SCHEDULE[idx].local}"?\nConferido por ${entry?.name || '—'}.`);
+    if(ok){
+      clearCheck(currentFloor, idx).then((success) => {
+        if(success){ renderNavStates(); renderHeader(); renderFloorHeading(); renderItems(); }
+      });
+    }
+    return;
+  }
+  pendingKey = idx;
+  document.getElementById('modalTitle').textContent = 'Confirmar recebimento';
+  document.getElementById('modalDesc').textContent =
+    `${SCHEDULE[idx].code} — ${SCHEDULE[idx].local} (Pavimento ${currentFloor}). Informe seu nome para registrar.`;
+  document.getElementById('nameInput').value = '';
+  document.getElementById('overlay').classList.add('show');
+  setTimeout(() => document.getElementById('nameInput').focus(), 50);
+}
+
+document.getElementById('cancelBtn').addEventListener('click', () => {
+  document.getElementById('overlay').classList.remove('show');
+  pendingKey = null;
+});
+
+document.getElementById('confirmBtn').addEventListener('click', async () => {
+  const name = document.getElementById('nameInput').value.trim();
+  if(!name){
+    document.getElementById('nameInput').focus();
+    return;
+  }
+  if(pendingKey === null) return;
+  const idx = pendingKey;
+  document.getElementById('overlay').classList.remove('show');
+  pendingKey = null;
+  await saveCheck(currentFloor, idx, name);
+  renderNavStates(); renderHeader(); renderFloorHeading(); renderItems();
+});
+
+document.getElementById('nameInput').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') document.getElementById('confirmBtn').click();
+  if(e.key === 'Escape') document.getElementById('cancelBtn').click();
+});
+
+// ---------- SYNC ----------
+// Com Firestore não precisamos mais de polling: listenAll() (chamado dentro de initFirebase)
+// já atualiza a tela sozinha sempre que alguém marca/desmarca um item, em qualquer dispositivo.
+render();
+initFirebase();
+</script>
+
+</body>
+</html>
